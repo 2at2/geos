@@ -9,7 +9,7 @@ var indexEntry = 1;
  */
 function Entry(data) {
     this.index = indexEntry++;
-    this.data = data || {};
+    this.data = tryGelf(data || {});
     this.$ = null;
     this.open = false;
     if (data["event-time"]) {
@@ -17,13 +17,20 @@ function Entry(data) {
     } else {
         this.time = new Date();
     }
+    this.timestamp = this.time.getTime();
 }
 
 /**
  * @returns {string|*|string} RayID of log entry
  */
 Entry.prototype.getRayId = function getRayId() {
-    return this.data.rayId || this.data["sessionId"] || this.data["session-id"] || "--none--";
+    return this.data.rayId
+        || this.data["sessionId"]
+        || this.data["session-id"]
+        || this.data["requestId"]
+        || this.data["request-id"]
+        || this.data["request_id"]
+        || "--none--";
 };
 /**
  * @returns {string} Name of object, that emits this event
@@ -35,12 +42,12 @@ Entry.prototype.getLogger = function getLogger() {
  * @returns {string} Short name of object, that emits this event
  */
 Entry.prototype.getLoggerShort = function getLoggerShort() {
-    var logger = this.getLogger();
+    let logger = this.getLogger();
     if (logger.indexOf('\\') !== -1) {
         logger = logger.replace(/\\+/g, '.')
     }
     if (logger.indexOf('.') !== -1) {
-        var chunks = logger.split('.');
+        let chunks = logger.split('.');
         logger = chunks.map(function (o, i) {
             return i === chunks.length - 1
                 ? o
@@ -60,7 +67,7 @@ Entry.prototype.getApplicationName = function getApplicationName() {
  * @returns {string} Message logging level
  */
 Entry.prototype.getLevel = function getLevel() {
-    var lvl = (this.data["log-level"] || this.data.level || "info").toLowerCase();
+    let lvl = (this.data["log-level"] || this.data.level || "info").toLowerCase();
     if (lvl === "warn") {
         lvl = "warning";
     }
@@ -71,7 +78,7 @@ Entry.prototype.getLevel = function getLevel() {
  * @returns {boolean} True if logging level points to error
  */
 Entry.prototype.isError = function isError() {
-    var lvl = this.getLevel();
+    let lvl = this.getLevel();
     return lvl === "error" || lvl === "alert" || lvl === "critical" || lvl === "emergency";
 };
 /**
@@ -85,31 +92,32 @@ Entry.prototype.getMessage = function getMessage() {
  */
 Entry.prototype.getDom = function getDom() {
     if (this.$ === null) {
-        var $ = document.createElement('div');
+        let $ = document.createElement('div');
+        let isoTime = this.time.toISOString();
         $.setAttribute('index', this.index);
         $.classList.add("entry");
         $.classList.add("entry-" + this.getLevel());
         $.innerHTML = '<div class="line">' +
-            '<span class="time">' + this.time.toISOString().slice(14, 19) + '</span>' +
+            '<span class="time" title="' + isoTime.replace('T', ' ').replace('Z', '') + '">' + isoTime.slice(14, 19) + '</span>' +
             '<span class="message">' + this.getMessage() + '</span>' +
             '<span class="app">' + this.getApplicationName() + '</span>' +
             '</div><div class="details unfold"></div>';
 
 
         this.$ = $;
-        var $unfold = $.querySelector(".unfold");
-        var self = this;
+        let $unfold = $.querySelector(".unfold");
+        let self = this;
         $.querySelector('.line .time').addEventListener('click', function () {
             self.open = !self.open;
             if (self.open) {
                 // Current state - open, rendering keys
 
                 // Preparing data to render
-                var cloned = {};
+                let cloned = {};
                 Object.keys(self.data).forEach(function (name) {
                     cloned[name] = self.data[name];
                 });
-                var extra = {};
+                let extra = {};
                 if (cloned.exception
                     && typeof cloned.exception === "object"
                     && !Array.isArray(cloned.exception)
@@ -125,7 +133,7 @@ Entry.prototype.getDom = function getDom() {
                 console.log(self.data);
 
                 // Rendering HTML
-                var html = '';
+                let html = '';
                 html += '<div class="table">';
                 Object.keys(cloned).forEach(function (name) {
                     var value = cloned[name];
@@ -179,3 +187,46 @@ Entry.prototype.getDom = function getDom() {
 
     return this.$;
 };
+
+/**
+ * Parses incoming data and if GELF signature recognized - converts
+ * data from GELF to standard logstash format.
+ *
+ * @param data Incoming data
+ * @returns {*}
+ */
+function tryGelf(data) {
+    if (data && data.host && data.level && data.short_message && data.version) {
+        // Seems like data contains GELF-specific fields, assuming that this is GELF message
+        data.object = data.host;
+        data.pattern = data.short_message;
+        data.message = data.full_message;
+
+        switch (data.level) {
+            case 2:
+                data['log-level'] = 'alert';
+                break;
+            case 3:
+                data['log-level'] = 'error';
+                break;
+            case 4:
+                data['log-level'] = 'warn';
+                break;
+            case 6:
+                data['log-level'] = 'info';
+                break;
+            default:
+                data['log-level'] = 'debug';
+                break;
+        }
+
+        // Copying underscore values to top level
+        for (let [key, value] of Object.entries(data)) {
+            if (key.startsWith('_')) {
+                data[key.substring(1)] = value;
+            }
+        }
+    }
+
+    return data;
+}

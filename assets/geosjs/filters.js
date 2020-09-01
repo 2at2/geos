@@ -1,19 +1,19 @@
 "use strict";
 
-var filters = [];
-
 /**
  * Constructor for filters
  *
  * @param name      {string}          Filter name
  * @param predicate {function(Entry)} Filter predicate function
- * @param enabled   {boolean=}        Enabled or disabled by default
+ * @param enabled   {boolean}        Enabled or disabled by default
+ * @param onChange  {function}        Callback fired when filter toggles
  * @constructor
  */
-function Filter(name, predicate, enabled) {
+function Filter(name, predicate, enabled, onChange) {
     this.name = name;
     this.enabled = !!enabled;
     this.predicate = predicate;
+    this.onChange = onChange;
     this.$ = null;
     this.$cnt = null;
     this.filtered = 0;
@@ -55,6 +55,9 @@ Filter.prototype.getDom = function getDom() {
             } else {
                 $.classList.remove("active")
             }
+            if (this.onChange) {
+                this.onChange();
+            }
         }.bind(this));
 
         $.innerHTML = '<i class="fa fa-filter" aria-hidden="true" title="Filters"><span class="counter">' + this.filtered + '</span></i> <span class="name">' + this.name + '</span>';
@@ -64,27 +67,19 @@ Filter.prototype.getDom = function getDom() {
     return this.$;
 };
 
+// TODO
 filters.push(new Filter("Trace", function (e) {
     return e.getLevel() === "trace"
 }, true));
 filters.push(new Filter("Debug", function (e) {
     return e.getLevel() === "debug"
 }));
-filters.push(new Filter("[Java] MySQLTaskRepository garbage", function (e) {
-    return e.getLevel() === "debug" && e.data.name === "MySQLTaskRepository" && e.data.pattern === "No data received in :elapsed for :sql";
+filters.push(new Filter("Info", function (e) {
+    return e.getLevel() === "info"
 }));
-filters.push(new Filter("[Java] Task info", function (e) {
-    return e.getLevel() === "info" && e.data.name === "TaskBasedRpc"
-        && (e.data.pattern === "Incoming RPC request to :route" || e.data.pattern === "Task :taskId released with nextAt :next");
+filters.push(new Filter("Only route", function (e) {
+    return !(e.data && e.data.pattern && e.data.pattern === "Incoming RPC request to :route");
 }));
-filters.push(new Filter("[Java] Maintainer events", function (e) {
-    var level = e.getLevel();
-    return e.getLogger() === "maintain" && (level === "trace" || level === "debug" || level === "info");
-}));
-filters.push(new Filter("[AF] Reporting sync garbage", function (e) {
-    return e.getLevel() === "info" && e.data.name === "reportingSync" && e.data.pattern === "Handling incoming request on :path";
-}));
-
 
 if (window.GEOS) {
     window.GEOS._filters = filters;
