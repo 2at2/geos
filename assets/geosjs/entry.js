@@ -24,7 +24,13 @@ function Entry(data) {
  * @returns {string|*|string} RayID of log entry
  */
 Entry.prototype.getRayId = function getRayId() {
-    return this.data.rayId || this.data["sessionId"] || this.data["session-id"] || "--none--";
+    return this.data.rayId
+        || this.data["sessionId"]
+        || this.data["session-id"]
+        || this.data["requestId"]
+        || this.data["request-id"]
+        || this.data["request_id"]
+        || "--none--";
 };
 /**
  * @returns {string} Name of object, that emits this event
